@@ -1,5 +1,10 @@
 # build_gpt_from_scratch
-This Repository has all you need to build a gpt2 from scratch with explanation. some animation was created by me and other taked in books, article or papers.
+This Repository has all you need to build a gpt2 from scratch with explanation. some animation was created by me and other taked in books **(Build a Large Language Model (From Scratch))**, article or papers.
+# Before You Start :)
+* Download the notebook
+* Run the installation & Import Cell code
+* Read and Understand Each Step Befor you run the cell code
+* If you need Help Contact me...
 # Data Loader & Dataset:
 ![image](https://github.com/user-attachments/assets/24f7cdbb-98e5-4bdb-bff9-21d55516512a)
 * The Dataset contains all individual data samples, while the DataLoader organizes these samples into batches.
