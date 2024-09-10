@@ -136,3 +136,116 @@ masked_attention_scores[masked_attention_scores==0]=-torch.inf
 # calculate masked att weights
 masked_attention_weights=torch.softmax(masked_attention_scores,dim=1)
 ```
+## Dropout
+Dropout is the process of randomly setting some nodes to output zero during the training process. 
+```python
+# create drop out layer with treshould of 0.2
+dropout=nn.Dropout(0.2)
+# apply dropout on attention_weights, the remain values will scaled of 1/0.2= 5
+dropout(masked_attention_weights)
+```
+![image](https://github.com/user-attachments/assets/9615e3a6-0fff-46da-b32f-5d360aa86ef4)
+
+## Causal Attention Class + Dropout
+```python
+class CausalAttention(nn.Module):
+  def __init__(self,in_dim,out_dim,context_lenght,p_dropout=0.5,b_kqv=False):
+    super().__init__()
+    self.w_key=nn.Linear(in_dim,out_dim,b_kqv)
+    self.w_query=nn.Linear(in_dim,out_dim,b_kqv)
+    self.w_value=nn.Linear(in_dim,out_dim,b_kqv)
+    self.dropout=nn.Dropout(p_dropout) # add drop out layer with threshold p_dropout
+    self.register_buffer(
+        "mask",
+        torch.triu(torch.ones(context_lenght,context_lenght),diagonal=1)
+    )
+  def forward(self,X):
+    att_weights=self.__attention_weights(X)
+    context_vects=self.__context_vects(X,att_weights)
+    return context_vects
+  def __attention_weights(self,X):
+    # X shape (c,a,b)
+    _,nbr_tokens_,_=X.shape
+    keys=self.w_key(X)
+    queries=self.w_query(X)
+    scores=queries @ keys.transpose(1,2) # a=1,b=2
+    scores.masked_fill_(
+        self.mask.bool()[:nbr_tokens_,:nbr_tokens_],-torch.inf
+    )
+    masked_weight_att=torch.softmax(scores/keys.shape[-1]**0.5,dim=-1)
+    drop_masked_weight_att=self.dropout(masked_weight_att)
+    return drop_masked_weight_att
+  def __context_vects(self,X,att_weights):
+    values=self.w_value(X)
+    return att_weights @ values
+```
+
+## Multi-Head Attentions
+* Implementing multi-head attention involves creating multiple instances of the self-attention mechanism
+![image](https://github.com/user-attachments/assets/e70dc264-957a-4b09-ab69-ed68f606d35f)
+```python
+class MultiheadAttentionWrapper(nn.Module):
+  def __init__(self,in_dim,out_dim,context_lenght,num_head,p_drop=0.5,b_kqv=False):
+    super().__init__()
+    self.heads=nn.ModuleList([CausalAttention(in_dim,out_dim,context_lenght,p_drop,b_kqv) for _ in range(num_head)])
+  def forward(self,X):
+    context_vects=torch.cat([head(X) for head in self.heads],dim=-1) # concatenation of context vects
+    return context_vects
+```
+![image](https://github.com/user-attachments/assets/e8ec1cea-c8b2-464b-bc86-170e4d32e738)
+## MultiHead Attentions with Causual Att
+The reason is that we only need one matrix multiplication to compute the keys, for instance,
+  * keys = self.W_key(x) (the same is true for the queries and values).
+
+In the MultiHeadAttentionWrapper, we needed to repeat this matrix multiplication, which is computationally one of the most expensive steps, for each attention head.
+
+![image](https://github.com/user-attachments/assets/a0e50b40-708b-48ac-8760-1d9bda045d31)
+
+```python
+class MultiHeadAttention(nn.Module):
+  def __init__(self,d_in,d_out,context_length,num_heads,p_drop=0.5,b_kqv=False):
+    super().__init__()
+    assert d_out%num_heads==0 , "d_out must be divisible by num_heads"
+    self.d_out=d_out
+    self.num_heads=num_heads
+    self.head_out=d_out//num_heads
+    self.context_length=context_length
+    self.w_key=nn.Linear(d_in,d_out,bias=b_kqv)
+    self.w_query=nn.Linear(d_in,d_out,bias=b_kqv)
+    self.w_value=nn.Linear(d_in,d_out,bias=b_kqv)
+    self.drop_out=nn.Dropout(p_drop)
+    self.register_buffer("mask",
+                         torch.triu(
+                             torch.ones(context_length,context_length),diagonal=1
+                         ))
+    self.out_proj=nn.Linear(d_out,d_out)
+
+  def forward(self,X):
+    b,nbr_tokens,embed_out=X.shape
+    keys=self.w_key(X)
+    queries=self.w_query(X)
+    values=self.w_value(X)
+    # change the shape of k,q,v to be batch , context len, number of heads and head out
+    keys=keys.view(b,nbr_tokens,self.num_heads,self.head_out)
+    queries=queries.view(b,nbr_tokens,self.num_heads,self.head_out)
+    values=values.view(b,nbr_tokens,self.num_heads,self.head_out)
+    # transpose heads with nbr of tokens or context len
+    keys=keys.transpose(1,2)
+    queries=queries.transpose(1,2)
+    values=values.transpose(1,2)
+    # calculate attention scores
+    att_scores=queries @ keys.transpose(2,3)
+    # causual Attention
+    mask_bool=self.mask.bool()[:nbr_tokens,:nbr_tokens]
+    att_scores.masked_fill_(mask_bool,-torch.inf)
+    # weigthts causual attentions
+    att_weights=torch.softmax(att_scores/keys.shape[-1]**0.5,dim=-1) # b,head,token,head_out
+    # drop out
+    att_weights=self.drop_out(att_weights)
+    # context vector
+    context_vect=(att_weights @ values).transpose(1,2)
+    context_vect=context_vect.contiguous().view(b,nbr_tokens,self.d_out) # b,token, context_vect  (num_heads * self.head_out)
+    return self.out_proj(context_vect)
+```
+
+
