@@ -252,5 +252,16 @@ class MultiHeadAttention(nn.Module):
     context_vect=context_vect.contiguous().view(b,nbr_tokens,self.d_out) # b,token, context_vect  (num_heads * self.head_out)
     return self.out_proj(context_vect)
 ```
-
+# Build GPT
+## GPT Configs
+## Normalization Layer
+## GELU (Gaussian Error Linear Unit) 
+## Feed Forward Step
+## Shortcut Connection
+## Transformer Block
+## GPT Model
+## Genrate Text
+## Loss Log Liklihood
+## Split Data
+## Train GPT
 
